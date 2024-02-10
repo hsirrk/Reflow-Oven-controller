@@ -99,6 +99,9 @@ FMS1_state5:
 FSM1_state5_done:
 	jmp FMS2
 
-FMS2: ;I put this here for now, we will need to move it
+FMS2: 	;I put this here for now, we will need to move it
 	;need to check the time and temperature, and either reenter states, or move on and connect different states
+
+	mov a, FSM1_state
+	cjne a, 
 
