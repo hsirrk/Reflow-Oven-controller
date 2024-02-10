@@ -87,7 +87,7 @@ FSM1_state4:
 FSM1_state4_done:
 	ljmp FSM1_state4
 
-FMS1_state5:
+FSM1_state5:
 	cjne a, #5, FSM1_state4
 	mov pwm, #0 ;set power to 0%
 	mov a, cooling_temp
@@ -99,7 +99,7 @@ FMS1_state5:
 FSM1_state5_done:
 	jmp FMS2
 
-FMS2: 	;I put this here for now, we will need to move it
+FSM2: 	;I put this here for now, we will need to move it
 	;need to check the time and temperature, and either reenter states, or move on and connect different states
 
 	mov a, FSM1_state
