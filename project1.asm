@@ -17,6 +17,9 @@ $LIST
 ;                               -------
 ;
 
+ABORT_BUTTON EQU (decide which pin later)
+PB6 EQU (decide which pin later)
+
 DSEG ; Before the state machine!
 FSM1_state: ds 1
 temp_soak: ds 1
@@ -28,6 +31,7 @@ temp_cooling: ds 1
 time_cooling: ds 1
 
 FSM1:
+	mov FSM1_state, #0
 	mov a, FSM1_state
 	
 FSM1_state0:
@@ -76,7 +80,7 @@ FSM1_state3_done:
 	ljmp FSM2
 
 FSM1_state4:
-	cjne a, #4, FSM1_state4
+	cjne a, #4, FSM1_state5
 	mov pwm, #20 ;set power to 20%
 	mov a, reflow_time
 	clr c
@@ -85,10 +89,10 @@ FSM1_state4:
 	mov FSM1_state, #5
 
 FSM1_state4_done:
-	ljmp FSM1_state4
+	ljmp FSM2
 
 FSM1_state5:
-	cjne a, #5, FSM1_state4
+	cjne a, #5, FSM1_state0
 	mov pwm, #0 ;set power to 0%
 	mov a, cooling_temp
 	clr c
@@ -99,9 +103,33 @@ FSM1_state5:
 FSM1_state5_done:
 	jmp FMS2
 
-FSM2: 	;I put this here for now, we will need to move it
-	;need to check the time and temperature, and either reenter states, or move on and connect different states
+(Not sure where in FSM1 we should loop back to yet)
 
+FSM2:
+	jnb ABORT_BUTTON, FSM1 ;if the abort button is pressed, go back to state 0 (waiting for start button to be pressed)
 	mov a, FSM1_state
-	cjne a, 
+
+FSM2_jump_state0:
+	cjne a, #0, FSM2_jump_state1 ;check if still in state 0, check if in next state if not
+	ljmp FSM1_state0_done ;jump back to FSM1_state0_done if still in state 0
+
+FSM2_jump_state1:
+	cjne a, #1, FSM2_jump_state2 ;check if still in state 1, check if in next state if not
+	ljmp FSM1_state1_done ;jump back to FSM1_state1_done if still in state 1
+
+FSM2_jump_state2:
+    	cjne a, #2, FSM2_jump_state3 ;check if still in state 2, check if in next state if not
+    	ljmp FSM1_state2_done ;jump back to FSM1_state2_done if still in state 2
+
+FSM2_jump_state3:
+    	cjne a, #3, FSM2_jump_state4 ;check if still in state 3, check if in next state if not
+    	ljmp FSM1_state3_done ;jump back to FSM1_state3_done if still in state 3
+
+FSM2_jump_state4:
+    	cjne a, #4, FSM2_jump_state5 ;check if still in state 4, check if in next state if not
+    	ljmp FSM1_state4_done ;jump back to FSM1_state4_done if still in state 4
+
+FSM2_jump_state5:
+    	cjne a, #5, FSM2_jump_state5 ;check if still in state 5, check if in next state if not
+    	ljmp FSM1_state5_done ;jump back to FSM1_state5_done if still in state 5
 
