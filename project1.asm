@@ -52,7 +52,7 @@ FSM1_state1_done:
 FSM1_state2:
 	cjne a, #2, FSM1_state3
 	mov pwm, #20
-	mov a, #time_soak
+	mov a, time_soak
 	clr c
 	subb a, sec
 	jnc FSM1_state2_done
@@ -64,7 +64,26 @@ FSM1_state3:
 	cjne a, #3, FSM1_state4
 	mov pwm, #100
 	mov sec, #0
-	mov a, #temp_3
+	mov a, temp_3
 	clr c
-	subb a, 
-	
+	subb a, temp
+	jnc FSM1_state3_done
+	mov FSM1_state, #4
+
+FSM1_state4:
+	cjne a, #4, FSM1_state4
+	mov pwm, #20
+	mov a, reflow_time
+	clr c
+	subb a, reflow_time
+	jnc FSM1_state4_dome
+	mov FSM1_state, #4
+
+FMS1_state5:
+	cjne a, #5, FSM1_state4
+	mov pwm, #0
+	mov a, cooling_temp
+	clr c
+	subb a, temp
+	jnc FSM1_state5_dome
+	mov FSM1_state, #5
