@@ -21,7 +21,7 @@ DSEG ; Before the state machine!
 FSM1_state: ds 1
 temp_soak: ds 1
 time_soak: ds 1
-temp_3: ds 1
+temp_state3: ds 1
 temp_refl: ds 1
 time_refl: ds 1
 
