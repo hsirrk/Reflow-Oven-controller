@@ -80,12 +80,12 @@ FSM1_state4:
 	mov pwm, #20
 	mov a, reflow_time
 	clr c
-	subb a, reflow_time
+	subb a, sec
 	jnc FSM1_state4_dome
 	mov FSM1_state, #4
 
 FSM1_state4_done:
-	ljmp FSM2
+	ljmp FSM1_state4
 
 FMS1_state5:
 	cjne a, #5, FSM1_state4
