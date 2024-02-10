@@ -24,15 +24,17 @@ time_soak: ds 1
 temp_state3: ds 1
 temp_refl: ds 1
 time_refl: ds 1
+temp_cooling: ds 1
+time_cooling: ds 1
 
 FSM1:
 	mov a, FSM1_state
 	
 FSM1_state0:
-	cjne a, #0, FSM1_state1
-	mov pwm, #0
-	jb PB6, FSM1_state0_done
-	jnb PB6, $ ; Wait for key release
+	cjne a, #0, FSM1_state1 		;if we arent in state 0, jump to state 1
+	mov pwm, #0 ;pusle with modulation, 	;0% power
+	jb PB6, FSM1_state0_done 		;if startbutton is not pressed, jump to state_0_done (so we can stay in state 0)
+	jnb PB6, $ ; Wait for key release	;if startbutton is pressed, wait till it is released and start the FSM
 	mov FSM1_state, #1
 FSM1_state0_done:
 	ljmp FSM1
