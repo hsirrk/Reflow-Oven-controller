@@ -37,7 +37,7 @@ FSM1_state0:
 	jnb PB6, $ ; Wait for key release	;if startbutton is pressed, wait till it is released and start the FSM
 	mov FSM1_state, #1
 FSM1_state0_done:
-	ljmp FSM1
+	ljmp FSM2
 	
 FSM1_state1:
 	cjne a, #1, FSM1_state2
@@ -49,7 +49,7 @@ FSM1_state1:
 	jnc FSM1_state1_done
 	mov FSM1_state, #2
 FSM1_state1_done:
-	ljmp FSM1
+	ljmp FSM2
 	
 FSM1_state2:
 	cjne a, #2, FSM1_state3
@@ -60,7 +60,7 @@ FSM1_state2:
 	jnc FSM1_state2_done
 	mov FSM1_state, #3
 FSM1_state2_done:
-	ljmp FSM1
+	ljmp FSM2
 	
 FSM1_state3:
 	cjne a, #3, FSM1_state4
@@ -72,6 +72,9 @@ FSM1_state3:
 	jnc FSM1_state3_done
 	mov FSM1_state, #4
 
+FSM1_state3_done:
+	ljmp FSM2
+
 FSM1_state4:
 	cjne a, #4, FSM1_state4
 	mov pwm, #20
@@ -81,6 +84,9 @@ FSM1_state4:
 	jnc FSM1_state4_dome
 	mov FSM1_state, #4
 
+FSM1_state4_done:
+	ljmp FSM2
+
 FMS1_state5:
 	cjne a, #5, FSM1_state4
 	mov pwm, #0
@@ -89,3 +95,10 @@ FMS1_state5:
 	subb a, temp
 	jnc FSM1_state5_dome
 	mov FSM1_state, #5
+
+FSM1_state5_done:
+	jmp FMS2
+
+FMS2: ;I put this here for now, we will need to move it
+	;need to check the time and temperature, and either reenter states, or move on and connect different states
+
