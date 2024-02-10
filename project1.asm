@@ -41,11 +41,11 @@ FSM1_state0_done:
 	
 FSM1_state1:
 	cjne a, #1, FSM1_state2
-	mov pwm, #100
-	mov sec, #0
+	mov pwm, #100 ;set power to 100%
+	mov sec, #0 ;set seconds to 0
 	mov a, temp_soak
 	clr c
-	subb a, temp
+	subb a, temp ;check if temperature has been exceeded threshold
 	jnc FSM1_state1_done
 	mov FSM1_state, #2
 FSM1_state1_done:
@@ -53,10 +53,10 @@ FSM1_state1_done:
 	
 FSM1_state2:
 	cjne a, #2, FSM1_state3
-	mov pwm, #20
+	mov pwm, #20 ;set power to 20%
 	mov a, time_soak
 	clr c
-	subb a, sec
+	subb a, sec ;check if time has been exceeded threshold
 	jnc FSM1_state2_done
 	mov FSM1_state, #3
 FSM1_state2_done:
@@ -64,11 +64,11 @@ FSM1_state2_done:
 	
 FSM1_state3:
 	cjne a, #3, FSM1_state4
-	mov pwm, #100
-	mov sec, #0
+	mov pwm, #100 ;set power to 100%
+	mov sec, #0 ;set seconds to 0
 	mov a, temp_3
 	clr c
-	subb a, temp
+	subb a, temp ;check if temperature has been exceeded threshold
 	jnc FSM1_state3_done
 	mov FSM1_state, #4
 
@@ -77,24 +77,24 @@ FSM1_state3_done:
 
 FSM1_state4:
 	cjne a, #4, FSM1_state4
-	mov pwm, #20
+	mov pwm, #20 ;set power to 20%
 	mov a, reflow_time
 	clr c
-	subb a, sec
-	jnc FSM1_state4_dome
-	mov FSM1_state, #4
+	subb a, sec ;check if time has been exceeded threshold
+	jnc FSM1_state4_done
+	mov FSM1_state, #5
 
 FSM1_state4_done:
 	ljmp FSM1_state4
 
 FMS1_state5:
 	cjne a, #5, FSM1_state4
-	mov pwm, #0
+	mov pwm, #0 ;set power to 0%
 	mov a, cooling_temp
 	clr c
-	subb a, temp
-	jnc FSM1_state5_dome
-	mov FSM1_state, #5
+	subb a, temp ;check if temperature is below threshold
+	jc FSM1_state5_done
+	mov FSM1_state, #0
 
 FSM1_state5_done:
 	jmp FMS2
