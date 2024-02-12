@@ -103,33 +103,31 @@ FSM1_state5:
 FSM1_state5_done:
 	jmp FMS2
 
-(Not sure where in FSM1 we should loop back to yet)
-
 FSM2:
 	jnb ABORT_BUTTON, FSM1 ;if the abort button is pressed, go back to state 0 (waiting for start button to be pressed)
 	mov a, FSM1_state
 
 FSM2_jump_state0:
 	cjne a, #0, FSM2_jump_state1 ;check if still in state 0, check if in next state if not
-	ljmp FSM1_state0_done ;jump back to FSM1_state0_done if still in state 0
+	ljmp FSM1_state0 ;jump back to FSM1_state0 if still in state 0
 
 FSM2_jump_state1:
 	cjne a, #1, FSM2_jump_state2 ;check if still in state 1, check if in next state if not
-	ljmp FSM1_state1_done ;jump back to FSM1_state1_done if still in state 1
+	ljmp FSM1_state1 ;jump back to FSM1_state1 if still in state 1
 
 FSM2_jump_state2:
     	cjne a, #2, FSM2_jump_state3 ;check if still in state 2, check if in next state if not
-    	ljmp FSM1_state2_done ;jump back to FSM1_state2_done if still in state 2
+    	ljmp FSM1_state2 ;jump back to FSM1_state2 if still in state 2
 
 FSM2_jump_state3:
     	cjne a, #3, FSM2_jump_state4 ;check if still in state 3, check if in next state if not
-    	ljmp FSM1_state3_done ;jump back to FSM1_state3_done if still in state 3
+    	ljmp FSM1_state3 ;jump back to FSM1_state3 if still in state 3
 
 FSM2_jump_state4:
     	cjne a, #4, FSM2_jump_state5 ;check if still in state 4, check if in next state if not
-    	ljmp FSM1_state4_done ;jump back to FSM1_state4_done if still in state 4
+    	ljmp FSM1_state4 ;jump back to FSM1_state4 if still in state 4
 
 FSM2_jump_state5:
     	cjne a, #5, FSM2_jump_state5 ;check if still in state 5, check if in next state if not
-    	ljmp FSM1_state5_done ;jump back to FSM1_state5_done if still in state 5
+    	ljmp FSM1_state5 ;jump back to FSM1_state5 if still in state 5
 
