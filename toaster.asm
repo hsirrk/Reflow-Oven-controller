@@ -591,8 +591,25 @@ fsm_start:
 
 
 
-;Finite State Machine
 
+
+state1:
+	db 'state 1     ', 0
+
+state2:
+	db 'state 2     ', 0
+
+state 3:
+	db 'state 3     ', 0
+
+state 4:
+	db 'state 4     ', 0
+
+state 5:
+	db 'state 5     ', 0
+
+
+;Finite State Machine
 
 
 FSM1:
@@ -606,37 +623,56 @@ FSM1_state0:
 	jb PB6, Loop ;if startbutton is not pressed, jump to loop (so we can stay in state 0)
 	jnb PB6, $ ; Wait for key release	;if startbutton is pressed, wait till it is released and start the FSM
 	mov FSM1_state, #1
+
+FSM_State0_Display:
+	Set_Cursor(1,1)
+	Send_Constant_String(#state0)
+	lcall Loop
 	
 FSM1_state1: ;ramp to soak
 
 	cjne a, #1, FSM1_state2
 	mov pwm, #100 ;set power to 100%
 	mov sec, #0 ;set seconds to 0
-	mov a, temp_soak
+	mov a, soak_temp
 	clr c
 	subb a, temp ;check if temperature has been exceeded threshold
 	jnc Loop
 	mov FSM1_state, #2
 
+FSM_State1_Display:
+	Set_Cursor(1,1)
+	Send_Constant_String(#state1)
+	lcall Loop
 	
 FSM1_state2:
 	cjne a, #2, FSM1_state3
 	mov pwm, #20 ;set power to 20%
-	mov a, time_soak
+	mov a, soak_time
 	clr c
 	subb a, sec ;check if time has been exceeded threshold
 	jnc Loop
 	mov FSM1_state, #3
+
+FSM_State2_Display:
+	Set_Cursor(1,1)
+	Send_Constant_String(#state2)
+	lcall Loop
 	
 FSM1_state3:
 	cjne a, #3, FSM1_state4
 	mov pwm, #100 ;set power to 100%
 	mov sec, #0 ;set seconds to 0
-	mov a, temp_3
+	mov a, reflow_temp
 	clr c
 	subb a, temp ;check if temperature has been exceeded threshold
 	jnc Loop
 	mov FSM1_state, #4
+
+FSM_State3_Display:
+	Set_Cursor(1,1)
+	Send_Constant_String(#state3)
+	lcall Loop
 
 FSM1_state4:
 	cjne a, #4, FSM1_state5
@@ -647,6 +683,11 @@ FSM1_state4:
 	jnc Loop
 	mov FSM1_state, #5
 
+FSM_State4_Display:
+	Set_Cursor(1,1)
+	Send_Constant_String(#state4)
+	lcall Loop
+
 FSM1_state5:
 	cjne a, #5, FSM1_state0
 	mov pwm, #0 ;set power to 0%
@@ -655,6 +696,11 @@ FSM1_state5:
 	subb a, temp ;check if temperature is below threshold
 	jc Loop
 	mov FSM1_state, #0
+
+FSM_State4_Display:
+	Set_Cursor(1,1)
+	Send_Constant_String(#state5)
+	lcall Loop
 
 Loop:
 	mov a, FSM1_state
