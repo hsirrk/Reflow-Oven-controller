@@ -116,7 +116,7 @@ FSM1:
 FSM1_state0:
 	cjne a, #0, FSM1_state1 		;if we arent in state 0, jump to state 1
 	mov pwm, #0 ;pusle with modulation, 	;0% power
-	jb PB6, Loop ;if startbutton is not pressed, jump to loop (so we can stay in state 0)
+	jb PB6, loop ;if startbutton is not pressed, jump to loop (so we can stay in state 0)
 	jnb PB6, $ ; Wait for key release	;if startbutton is pressed, wait till it is released and start the FSM
 	mov FSM1_state, #1
 	
@@ -127,7 +127,7 @@ FSM1_state1:
 	mov a, temp_soak
 	clr c
 	subb a, temp ;check if temperature has been exceeded threshold
-	jnc Loop
+	jnc loop
 	mov FSM1_state, #2
 	
 FSM1_state2:
@@ -136,7 +136,7 @@ FSM1_state2:
 	mov a, time_soak
 	clr c
 	subb a, sec ;check if time has been exceeded threshold
-	jnc Loop
+	jnc loop
 	mov FSM1_state, #3
 	
 FSM1_state3:
@@ -146,7 +146,7 @@ FSM1_state3:
 	mov a, temp_3
 	clr c
 	subb a, temp ;check if temperature has been exceeded threshold
-	jnc Loop
+	jnc loop
 	mov FSM1_state, #4
 
 FSM1_state4:
@@ -155,7 +155,7 @@ FSM1_state4:
 	mov a, reflow_time
 	clr c
 	subb a, sec ;check if time has been exceeded threshold
-	jnc Loop
+	jnc loop
 	mov FSM1_state, #5
 
 FSM1_state5:
@@ -164,9 +164,9 @@ FSM1_state5:
 	mov a, cooling_temp
 	clr c
 	subb a, temp ;check if temperature is below threshold
-	jc Loop
+	jc loop
 	mov FSM1_state, #0
 
-Loop:
+loop:
 	mov a, FSM1_state
 	lcall FSM1
