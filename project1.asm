@@ -21,6 +21,7 @@ ABORT_BUTTON EQU (decide which pin later)
 PB6 EQU (decide which pin later)
 
 DSEG ; Before the state machine!
+pwm: ds 1
 FSM1_state: ds 1
 temp_soak: ds 1
 time_soak: ds 1
