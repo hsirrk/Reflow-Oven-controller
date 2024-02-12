@@ -31,13 +31,14 @@ temp_cooling: ds 1
 time_cooling: ds 1
 
 FSM1:
+	jb ABORT_BUTTON, FSM1_state0
 	mov FSM1_state, #0
 	mov a, FSM1_state
 	
 FSM1_state0:
 	cjne a, #0, FSM1_state1 		;if we arent in state 0, jump to state 1
 	mov pwm, #0 ;pusle with modulation, 	;0% power
-	jb PB6, FSM1_state0_done 		;if startbutton is not pressed, jump to state_0_done (so we can stay in state 0)
+	jb PB6, Loop ;if startbutton is not pressed, jump to loop (so we can stay in state 0)
 	jnb PB6, $ ; Wait for key release	;if startbutton is pressed, wait till it is released and start the FSM
 	mov FSM1_state, #1
 FSM1_state0_done:
@@ -50,7 +51,7 @@ FSM1_state1:
 	mov a, temp_soak
 	clr c
 	subb a, temp ;check if temperature has been exceeded threshold
-	jnc FSM1_state1_done
+	jnc Loop
 	mov FSM1_state, #2
 FSM1_state1_done:
 	ljmp FSM2
@@ -61,7 +62,7 @@ FSM1_state2:
 	mov a, time_soak
 	clr c
 	subb a, sec ;check if time has been exceeded threshold
-	jnc FSM1_state2_done
+	jnc Loop
 	mov FSM1_state, #3
 FSM1_state2_done:
 	ljmp FSM2
@@ -73,7 +74,7 @@ FSM1_state3:
 	mov a, temp_3
 	clr c
 	subb a, temp ;check if temperature has been exceeded threshold
-	jnc FSM1_state3_done
+	jnc Loop
 	mov FSM1_state, #4
 
 FSM1_state3_done:
@@ -85,7 +86,7 @@ FSM1_state4:
 	mov a, reflow_time
 	clr c
 	subb a, sec ;check if time has been exceeded threshold
-	jnc FSM1_state4_done
+	jnc Loop
 	mov FSM1_state, #5
 
 FSM1_state4_done:
@@ -97,37 +98,12 @@ FSM1_state5:
 	mov a, cooling_temp
 	clr c
 	subb a, temp ;check if temperature is below threshold
-	jc FSM1_state5_done
+	jc Loop
 	mov FSM1_state, #0
 
 FSM1_state5_done:
 	jmp FMS2
 
-FSM2:
-	jnb ABORT_BUTTON, FSM1 ;if the abort button is pressed, go back to state 0 (waiting for start button to be pressed)
+Loop:
 	mov a, FSM1_state
-
-FSM2_jump_state0:
-	cjne a, #0, FSM2_jump_state1 ;check if still in state 0, check if in next state if not
-	ljmp FSM1_state0 ;jump back to FSM1_state0 if still in state 0
-
-FSM2_jump_state1:
-	cjne a, #1, FSM2_jump_state2 ;check if still in state 1, check if in next state if not
-	ljmp FSM1_state1 ;jump back to FSM1_state1 if still in state 1
-
-FSM2_jump_state2:
-    	cjne a, #2, FSM2_jump_state3 ;check if still in state 2, check if in next state if not
-    	ljmp FSM1_state2 ;jump back to FSM1_state2 if still in state 2
-
-FSM2_jump_state3:
-    	cjne a, #3, FSM2_jump_state4 ;check if still in state 3, check if in next state if not
-    	ljmp FSM1_state3 ;jump back to FSM1_state3 if still in state 3
-
-FSM2_jump_state4:
-    	cjne a, #4, FSM2_jump_state5 ;check if still in state 4, check if in next state if not
-    	ljmp FSM1_state4 ;jump back to FSM1_state4 if still in state 4
-
-FSM2_jump_state5:
-    	cjne a, #5, FSM2_jump_state5 ;check if still in state 5, check if in next state if not
-    	ljmp FSM1_state5 ;jump back to FSM1_state5 if still in state 5
-
+	lcall FSM1
