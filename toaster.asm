@@ -105,6 +105,7 @@ PB3: dbit 1
 PB4: dbit 1
 fsm: dbit 1
 s_flag: dbit 1 ; set to 1 every time a second has passed
+abort: dbit 1 ;abort flag
 
 
 cseg
@@ -641,6 +642,16 @@ state 5:
 
 ;Finite State Machine
 
+set_abort:
+	setb abort
+	ret
+
+soak_time_check:
+	mov a, max_soak_time
+	clr c
+	subb a, time
+	jnc set_abort
+	ret
 
 FSM1:
 	jb ABORT_BUTTON, FSM1_state0
@@ -661,14 +672,18 @@ FSM_State0_Display:
 	
 FSM1_state1: ;ramp to soak
 
+	clr abort;
 	cjne a, #1, FSM1_state2
 	mov pwm, #100 ;set power to 100%
 	mov sec, #0 ;set seconds to 0
+	lcall soak_time_check ;check to see if the maximum time for soaking has been reached
+	jb abort, FSM_State0 ;
 	mov a, soak_temp
 	clr c
 	subb a, temp ;check if temperature has been exceeded threshold
 	jnc Loop
 	mov FSM1_state, #2
+
 
 FSM_State1_Display:
 	Set_Cursor(1,1)
