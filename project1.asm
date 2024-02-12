@@ -80,7 +80,6 @@ FSM1_state4:
 	jnc Loop
 	mov FSM1_state, #5
 
-
 FSM1_state5:
 	cjne a, #5, FSM1_state0
 	mov pwm, #0 ;set power to 0%
