@@ -32,6 +32,11 @@ TIMER1_RELOAD     EQU (0x100-(CLK/(16*BAUD)))
 TIMER0_RELOAD_1MS EQU (0x10000-(CLK/1000))
 
 SOUND_OUT     equ P1.7
+; Output
+PWM_OUT EQU P1.0 ; Logic 1=oven on
+
+ABORT_BUTTON EQU (decide which pin later)
+PB6 EQU (decide which pin later)
 
 
 ; Reset vector
@@ -75,6 +80,17 @@ stime: ds 1
 stemp: ds 1
 rtime: ds 1
 rtemp: ds 1
+pwm_counter: ds 1 ; Free running counter 0, 1, 2, ..., 100, 0
+pwm: ds 1 ; pwm percentage
+seconds: ds 1 ; a seconds counter attached to Timer 2 ISR
+FSM1_state: ds 1
+temp_soak: ds 1
+time_soak: ds 1
+temp_state3: ds 1
+temp_refl: ds 1
+time_refl: ds 1
+temp_cooling: ds 1
+time_cooling: ds 1
 
 
 ; In the 8051 we have variables that are 1-bit in size.  We can use the setb, clr, jb, and jnb
@@ -88,6 +104,7 @@ PB2: dbit 1
 PB3: dbit 1
 PB4: dbit 1
 fsm: dbit 1
+s_flag: dbit 1 ; set to 1 every time a second has passed
 
 
 cseg
@@ -313,7 +330,20 @@ Timer2_ISR:
 	; The two registers used in the ISR must be saved in the stack
 	push acc
 	push psw
-	
+
+	inc pwm_counter
+	clr c
+	mov a, pwm
+	subb a, pwm_counter ; If pwm_counter <= pwm then c=1
+	cpl c
+	mov PWM_OUT, c
+	mov a, pwm_counter
+	cjne a, #100, Here
+	mov pwm_counter, #0
+	inc seconds ; It is super easy to keep a seconds count here
+	setb s_flag
+
+Here:
 	; Increment the 16-bit one mili second counter
 	inc Count1ms+0    ; Increment the low 8-bits first
 	mov a, Count1ms+0 ; If the low 8-bits overflow, then increment high 8-bits
