@@ -100,6 +100,8 @@ LCD_D5 equ P0.1
 LCD_D6 equ P0.2
 LCD_D7 equ P0.3
 
+PWM-OUTPUT equ P1.0 ;PWM Output
+
 $NOLIST
 $include(LCD_4bit.inc) ; A library of LCD related functions and utility macros
 $include(math32.inc)
@@ -553,7 +555,7 @@ loop_f:
     ljmp loop_a
 
 fsm_start:
-	cpl fsm
+	cpl FSM1
 	lcall reset
 
 	Set_Cursor(1, 1)
@@ -584,4 +586,79 @@ fsm_start:
 	lcall Display_formated_BCD
 	Wait_Milli_Seconds(#250)
 	ljmp fsm_start
+
+
+
+
+
+;Finite State Machine
+
+
+
+FSM1:
+	jb ABORT_BUTTON, FSM1_state0
+	mov FSM1_state, #0
+	mov a, FSM1_state
+	
+FSM1_state0:
+	cjne a, #0, FSM1_state1 		;if we arent in state 0, jump to state 1
+	mov pwm, #0 ;pusle with modulation, 	;0% power
+	jb PB6, Loop ;if startbutton is not pressed, jump to loop (so we can stay in state 0)
+	jnb PB6, $ ; Wait for key release	;if startbutton is pressed, wait till it is released and start the FSM
+	mov FSM1_state, #1
+	
+FSM1_state1: ;ramp to soak
+
+	cjne a, #1, FSM1_state2
+	mov pwm, #100 ;set power to 100%
+	mov sec, #0 ;set seconds to 0
+	mov a, temp_soak
+	clr c
+	subb a, temp ;check if temperature has been exceeded threshold
+	jnc Loop
+	mov FSM1_state, #2
+
+	
+FSM1_state2:
+	cjne a, #2, FSM1_state3
+	mov pwm, #20 ;set power to 20%
+	mov a, time_soak
+	clr c
+	subb a, sec ;check if time has been exceeded threshold
+	jnc Loop
+	mov FSM1_state, #3
+	
+FSM1_state3:
+	cjne a, #3, FSM1_state4
+	mov pwm, #100 ;set power to 100%
+	mov sec, #0 ;set seconds to 0
+	mov a, temp_3
+	clr c
+	subb a, temp ;check if temperature has been exceeded threshold
+	jnc Loop
+	mov FSM1_state, #4
+
+FSM1_state4:
+	cjne a, #4, FSM1_state5
+	mov pwm, #20 ;set power to 20%
+	mov a, reflow_time
+	clr c
+	subb a, sec ;check if time has been exceeded threshold
+	jnc Loop
+	mov FSM1_state, #5
+
+FSM1_state5:
+	cjne a, #5, FSM1_state0
+	mov pwm, #0 ;set power to 0%
+	mov a, cooling_temp
+	clr c
+	subb a, temp ;check if temperature is below threshold
+	jc Loop
+	mov FSM1_state, #0
+
+Loop:
+	mov a, FSM1_state
+	lcall Update_temp
+	lcall FSM1
+
 END
