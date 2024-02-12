@@ -1,5 +1,6 @@
 $NOLIST
 $MODN76E003
+$include(LCD_4bit.inc)
 $LIST
 
 ;  N76E003 pinout:
@@ -20,8 +21,20 @@ $LIST
 ABORT_BUTTON EQU (decide which pin later)
 PB6 EQU (decide which pin later)
 
+CLK EQU 16600000 ; Microcontroller system oscillator frequency in Hz
+TIMER2_RATE EQU 100 ; 100Hz or 10ms
+TIMER2_RELOAD EQU (65536-(CLK/(16*TIMER2_RATE)))
+
+; Output
+PWM_OUT EQU P1.0 ; Logic 1=oven on
+
+BSEG
+s_flag: dbit 1 ; set to 1 every time a second has passed
+
 DSEG ; Before the state machine!
-pwm: ds 1
+pwm_counter: ds 1 ; Free running counter 0, 1, 2, ..., 100, 0
+pwm: ds 1 ; pwm percentage
+seconds: ds 1 ; a seconds counter attached to Timer 2 ISR
 FSM1_state: ds 1
 temp_soak: ds 1
 time_soak: ds 1
@@ -32,13 +45,45 @@ temp_cooling: ds 1
 time_cooling: ds 1
 
 CSEG
+; Reset vector
+org 0x0000
+ljmp main
+
 ; Timer/Counter 2 overflow interrupt vector
 org 0x002B
 	ljmp Timer2_ISR
+	
+; These 'equ' must match the hardware wiring
+LCD_RS equ P1.3
+LCD_E equ P1.4
+LCD_D4 equ P0.0
+LCD_D5 equ P0.1
+LCD_D6 equ P0.2
+LCD_D7 equ P0.3
 
-CLK EQU 16600000 ; Microcontroller system oscillator frequency in Hz
-TIMER2_RATE EQU 100 ; 100Hz or 10ms
-TIMER2_RELOAD EQU (65536-(CLK/(16*TIMER2_RATE)))
+Init_All:
+	; Configure all the pins for biderectional I/O
+	mov P3M1, #0x00
+	mov P3M2, #0x00
+	mov P1M1, #0x00
+	mov P1M2, #0x00
+	mov P0M1, #0x00
+	mov P0M2, #0x00
+	; Initialize timer 2 for periodic interrupts
+	mov T2CON, #0 ; Stop timer/counter. Autoreload mode.
+	mov TH2, #high(TIMER2_RELOAD)
+	mov TL2, #low(TIMER2_RELOAD)
+	; Set the reload value
+	mov T2MOD, #0b1010_0000 ; Enable timer 2 autoreload, and clock divider is 16
+	mov RCMP2H, #high(TIMER2_RELOAD)
+	mov RCMP2L, #low(TIMER2_RELOAD)
+	; Init the free running 10 ms counter to zero
+	mov pwm_counter, #0
+	; Enable the timer and interrupts
+	orl EIE, #0x80 ; Enable timer 2 interrupt ET2=1
+	setb TR2 ; Enable timer 2
+	setb EA ; Enable global interrupts
+	ret
 
 ;---------------------------------;
 ; ISR for timer 2 ;
