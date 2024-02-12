@@ -31,6 +31,38 @@ time_refl: ds 1
 temp_cooling: ds 1
 time_cooling: ds 1
 
+CSEG
+; Timer/Counter 2 overflow interrupt vector
+org 0x002B
+	ljmp Timer2_ISR
+
+CLK EQU 16600000 ; Microcontroller system oscillator frequency in Hz
+TIMER2_RATE EQU 100 ; 100Hz or 10ms
+TIMER2_RELOAD EQU (65536-(CLK/(16*TIMER2_RATE)))
+
+;---------------------------------;
+; ISR for timer 2 ;
+;---------------------------------;
+Timer2_ISR:
+	clr TF2 ; Timer 2 doesn't clear TF2 automatically. Do it in the ISR. It is bit addressable.
+	push psw
+	push acc
+	inc pwm_counter
+	clr c
+	mov a, pwm
+	subb a, pwm_counter ; If pwm_counter <= pwm then c=1
+	cpl c
+	mov PWM_OUT, c
+	mov a, pwm_counter
+	cjne a, #100, Timer2_ISR_done
+	mov pwm_counter, #0
+	inc seconds ; It is super easy to keep a seconds count here
+	setb s_flag
+Timer2_ISR_done:
+	pop acc
+	pop psw
+	reti
+
 FSM1:
 	jb ABORT_BUTTON, FSM1_state0
 	mov FSM1_state, #0
