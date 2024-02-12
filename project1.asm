@@ -41,8 +41,6 @@ FSM1_state0:
 	jb PB6, Loop ;if startbutton is not pressed, jump to loop (so we can stay in state 0)
 	jnb PB6, $ ; Wait for key release	;if startbutton is pressed, wait till it is released and start the FSM
 	mov FSM1_state, #1
-FSM1_state0_done:
-	ljmp FSM2
 	
 FSM1_state1:
 	cjne a, #1, FSM1_state2
@@ -53,8 +51,6 @@ FSM1_state1:
 	subb a, temp ;check if temperature has been exceeded threshold
 	jnc Loop
 	mov FSM1_state, #2
-FSM1_state1_done:
-	ljmp FSM2
 	
 FSM1_state2:
 	cjne a, #2, FSM1_state3
@@ -64,8 +60,6 @@ FSM1_state2:
 	subb a, sec ;check if time has been exceeded threshold
 	jnc Loop
 	mov FSM1_state, #3
-FSM1_state2_done:
-	ljmp FSM2
 	
 FSM1_state3:
 	cjne a, #3, FSM1_state4
@@ -77,9 +71,6 @@ FSM1_state3:
 	jnc Loop
 	mov FSM1_state, #4
 
-FSM1_state3_done:
-	ljmp FSM2
-
 FSM1_state4:
 	cjne a, #4, FSM1_state5
 	mov pwm, #20 ;set power to 20%
@@ -89,8 +80,6 @@ FSM1_state4:
 	jnc Loop
 	mov FSM1_state, #5
 
-FSM1_state4_done:
-	ljmp FSM2
 
 FSM1_state5:
 	cjne a, #5, FSM1_state0
@@ -100,9 +89,6 @@ FSM1_state5:
 	subb a, temp ;check if temperature is below threshold
 	jc Loop
 	mov FSM1_state, #0
-
-FSM1_state5_done:
-	jmp FMS2
 
 Loop:
 	mov a, FSM1_state
