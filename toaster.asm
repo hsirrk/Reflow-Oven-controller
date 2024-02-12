@@ -31,9 +31,8 @@ TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
 TIMER1_RELOAD     EQU (0x100-(CLK/(16*BAUD)))
 TIMER0_RELOAD_1MS EQU (0x10000-(CLK/1000))
 
-CLEAR_BUTTON  equ P1.5
-inc_stemp        equ P1.6
 SOUND_OUT     equ P1.7
+
 
 ; Reset vector
 org 0x0000
@@ -88,9 +87,7 @@ PB1: dbit 1
 PB2: dbit 1
 PB3: dbit 1
 PB4: dbit 1
-PB5: dbit 1
-PB6: dbit 1
-PB7: dbit 1
+fsm: dbit 1
 
 
 cseg
@@ -115,6 +112,10 @@ soak_temp: db 'ST:', 0
       
 reflow_time:      db 'Rt:', 0
 reflow_temp:      db 'RT:', 0
+
+start_msg: db 'STARTING...', 0
+clear: db '                ', 0
+fsm_message: db 'FSM STARTING', 0
 
 Init_All:
 	; Configure all the pins for biderectional I/O
@@ -156,158 +157,6 @@ Init_All:
 
 ; Send a character using the serial port
 
-ADC_to_PB:
-    ; Configure ADC to select AIN0
-    anl ADCCON0, #0xF0   ; Clear lower 4 bits of ADCCON0
-    orl ADCCON0, #0x00   ; Select AIN0 as ADC input
-
-    ; Clear ADCF flag and start ADC conversion
-    clr ADCF              ; Clear ADCF flag
-    setb ADCS             ; Set ADC start trigger signal
-    jnb ADCF, $           ; Wait for conversion complete
-
-    ; Set PB pins according to ADC value
-
-    ; Set PB7
-    setb PB7
-
-    ; Set PB6
-    setb PB6
-
-    ; Set PB5
-    setb PB5
-
-    ; Set PB4
-    setb PB4
-
-    ; Set PB3
-    setb PB3
-
-    ; Set PB2
-    setb PB2
-
-    ; Set PB1
-    setb PB1
-
-    ; Set PB0
-    setb PB0
-
-    ; Check ADC value and clear respective PB pin if necessary
-
-ADC_to_PB_L7:
-    clr c                ; Clear carry flag
-    mov a, ADCRH         ; Move ADCRH value to accumulator
-    subb a, #0xf0        ; Subtract threshold value for PB7
-    jc ADC_to_PB_L6      ; Jump if carry flag is set (i.e., ADC value is less than threshold)
-    clr PB7              ; Clear PB7
-    ret                  ; Return from subroutine
-
-ADC_to_PB_L6:
-    clr c
-    mov a, ADCRH
-    subb a, #0xd0
-    jc ADC_to_PB_L5
-    clr PB6
-    ret
-
-ADC_to_PB_L5:
-    clr c
-    mov a, ADCRH
-    subb a, #0xb0
-    jc ADC_to_PB_L4
-    clr PB5
-    ret
-
-ADC_to_PB_L4:
-    clr c
-    mov a, ADCRH
-    subb a, #0x90
-    jc ADC_to_PB_L3
-    clr PB4
-    ret
-
-ADC_to_PB_L3:
-    clr c
-    mov a, ADCRH
-    subb a, #0x70
-    jc ADC_to_PB_L2
-    clr PB3
-    ret
-
-ADC_to_PB_L2:
-    clr c
-    mov a, ADCRH
-    subb a, #0x50
-    jc ADC_to_PB_L1
-    clr PB2
-    ret
-
-ADC_to_PB_L1:
-    clr c
-    mov a, ADCRH
-    subb a, #0x30
-    jc ADC_to_PB_L0
-    clr PB1
-    ret
-
-ADC_to_PB_L0:
-    clr c
-    mov a, ADCRH
-    subb a, #0x10
-    jc ADC_to_PB_Done
-    clr PB0
-    ret
-
-ADC_to_PB_Done:
-    ; No push button pressed
-    ret
-
-; Display Push Buttons State on LCD
-Display_PushButtons_ADC:
-    Set_Cursor(2, 1)     ; Set cursor position on LCD
-    mov a, #'0'          ; Load ASCII '0' to accumulator
-
-    ; Check each PB pin and write corresponding state to LCD
-    mov c, PB7
-    addc a, #0
-    lcall ?WriteData
-
-    mov a, #'0'
-    mov c, PB6
-    addc a, #0
-    lcall ?WriteData
-
-    mov a, #'0'
-    mov c, PB5
-    addc a, #0
-    lcall ?WriteData
-
-    mov a, #'0'
-    mov c, PB4
-    addc a, #0
-    lcall ?WriteData
-
-    mov a, #'0'
-    mov c, PB3
-    addc a, #0
-    lcall ?WriteData
-
-    mov a, #'0'
-    mov c, PB2
-    addc a, #0
-    lcall ?WriteData
-
-    mov a, #'0'
-    mov c, PB1
-    addc a, #0
-    lcall ?WriteData
-
-    mov a, #'0'
-    mov c, PB0
-    addc a, #0
-    lcall ?WriteData
-
-    ret
 
 
 
@@ -349,10 +198,10 @@ waitms:
 ; We can display a number any way we want.  In this case with
 ; four decimal places.
 Display_formated_BCD:
-	Set_Cursor(2, 7)
+	Set_Cursor(2, 1)
+	Display_BCD(bcd+3)
 	Display_BCD(bcd+2)
 	Display_BCD(bcd+1)
-	Display_char(#'.')
 	Display_BCD(bcd+0)
 	ret
 
@@ -515,6 +364,73 @@ Timer2_ISR_done:
 	pop acc
 	reti
 
+LCD_PB:
+	; Set variables to 1: 'no push button pressed'
+	setb PB0
+	setb PB1
+	setb PB2
+	setb PB3
+	setb PB4
+	; The input pin used to check set to '1'
+	setb P1.5
+	
+	; Check if any push button is pressed
+	clr P0.0
+	clr P0.1
+	clr P0.2
+	clr P0.3
+	clr P1.3
+	jb P1.5, LCD_PB_Done
+
+	; Debounce
+	mov R2, #50
+	lcall waitms
+	jb P1.5, LCD_PB_Done
+
+	; Set the LCD data pins to logic 1
+	setb P0.0
+	setb P0.1
+	setb P0.2
+	setb P0.3
+	setb P1.3
+	
+	; Check the push buttons one by one
+	clr P1.3
+	mov c, P1.5
+	mov PB4, c
+	setb P1.3
+
+	clr P0.0
+	mov c, P1.5
+	mov PB3, c
+	setb P0.0
+	
+	clr P0.1
+	mov c, P1.5
+	mov PB2, c
+	setb P0.1
+	
+	clr P0.2
+	mov c, P1.5
+	mov PB1, c
+	setb P0.2
+	
+	clr P0.3
+	mov c, P1.5
+	mov PB0, c
+	setb P0.3
+
+LCD_PB_Done:		
+	ret
+
+reset:
+	Set_Cursor(1, 1)
+	Send_Constant_String(#clear)
+
+	Set_Cursor(2, 1)
+	Send_Constant_String(#clear)
+	ret	
+	
 ;---------------------------------;
 ; Main program. Includes hardware ;
 ; initialization and 'forever'    ;
@@ -535,11 +451,12 @@ main:
     lcall Timer0_Init
     lcall Timer2_Init
     setb EA   ; Enable Global interrupts
+	setb fsm
     lcall LCD_4BIT
     ; For convenience a few handy macros are included in 'LCD_4bit.inc':
 
-	mov BCD_counter, #0x00
-	mov BCD_minutes, #0x00
+	;mov BCD_counter, #0x00
+	;mov BCD_minutes, #0x00
 	mov rtemp, #0x0
 	mov stemp, #0x0
 	mov stime, #0x0
@@ -549,34 +466,70 @@ main:
 
 	
 	; After initialization the program stays in this 'forever' loop
-loop:
-	jb CLEAR_BUTTON, loop_a ; if the 'CLEAR' button is not pressed skip
-	Wait_Milli_Seconds(#50) ; Debounce delay. This macro is also in'LCD_4bit.inc'
-	jb CLEAR_BUTTON, loop_a ; if the 'CLEAR' button is not pressed skip
-	jnb CLEAR_BUTTON, $ ; Wait for button release. The '$' means: jump to same instruction.
-	; A valid press of the 'CLEAR' button has been detected, reset the BCD counter.
-	; But first stop timer 2 and reset the milli-seconds counter, to resync everything.
-	clr TR2 ; Stop timer 2
-	clr a
-	mov Count1ms+0, a
-	mov Count1ms+1, a
-	; Now clear the BCD counter
-	mov BCD_counter, a
-	setb TR2 ; Start timer 2
-	sjmp loop_a ; Display the new value
-
 loop_a:
-	jb inc_stemp, loop_b  ; if the 'CLEAR' button is not pressed skip
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb inc_stemp, loop_b  ; if the 'CLEAR' button is not pressed skip
-	jnb inc_stemp, $		; Wait for button release.  The '$' means: jump to same instruction.
+	lcall LCD_PB
+
+	jb PB0, loop_b  ; if the 'CLEAR' button is not pressed skip
+	Wait_Milli_Seconds(#80)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb PB0, loop_b  ; if the 'CLEAR' button is not pressed skip
+
 
 	mov a, stemp
 	add a, #0x01
 	da a
 	mov stemp, a
-
+	sjmp loop_f
+	
 loop_b:
+	lcall LCD_PB
+	
+	jb PB1, loop_c ; if the 'CLEAR' button is not pressed skip
+	Wait_Milli_Seconds(#80)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb PB1, loop_c ; if the 'CLEAR' button is not pressed skip
+
+
+	mov a, rtemp
+	add a, #0x01
+	da a
+	mov rtemp, a
+	sjmp loop_f
+	
+loop_c:
+	lcall LCD_PB
+	
+	jb PB2, loop_d ; if the 'CLEAR' button is not pressed skip
+	Wait_Milli_Seconds(#80)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb PB2, loop_d ; if the 'CLEAR' button is not pressed skip
+
+	mov a, stime
+	add a, #0x01
+	da a
+	mov stime, a
+	sjmp loop_f
+
+loop_d:
+	lcall LCD_PB
+	
+	jb PB3, loop_e ; if the 'CLEAR' button is not pressed skip
+	Wait_Milli_Seconds(#80)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb PB3, loop_e ; if the 'CLEAR' button is not pressed skip
+
+	mov a, rtime
+	add a, #0x01
+	da a
+	mov rtime, a
+	sjmp loop_f
+
+loop_e:
+	lcall LCD_PB
+	
+	jb PB4, loop_f ; if the 'CLEAR' button is not pressed skip
+	Wait_Milli_Seconds(#80)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb PB4, loop_f ; if the 'CLEAR' button is not pressed skip
+
+
+	ljmp fsm_start
+loop_f: 
 	clr half_seconds_flag ; We clear this flag in the main loop, but it is set in the ISR for timer 2
 	Set_Cursor(1, 1)
     Send_Constant_String(#soak_time)
@@ -597,5 +550,38 @@ loop_b:
 	Set_Cursor(2, 14)
     Display_BCD(rtemp)
 
-    ljmp loop
+    ljmp loop_a
+
+fsm_start:
+	cpl fsm
+	lcall reset
+
+	Set_Cursor(1, 1)
+	Send_Constant_String(#fsm_message)
+
+	; Read the signal connected to AIN5
+	anl ADCCON0, #0xF0
+	orl ADCCON0, #0x05 ; Select channel 5
+	lcall Read_ADC
+
+	; Convert to voltage
+
+	mov x+0, R0
+	mov x+1, R1
+	; Pad other bits with zero
+	mov x+2, #0
+	mov x+3, #0
+
+	Load_y(1000000)
+	lcall mul32
+	Load_y(13530)
+	lcall div32
+	Load_y()
+	lcall add32
+
+
+	lcall hex2bcd
+	lcall Display_formated_BCD
+	Wait_Milli_Seconds(#250)
+	ljmp fsm_start
 END
