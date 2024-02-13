@@ -31,9 +31,8 @@ TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
 TIMER1_RELOAD     EQU (0x100-(CLK/(16*BAUD)))
 TIMER0_RELOAD_1MS EQU (0x10000-(CLK/1000))
 
-
-inc_stemp        equ P1.0
 SOUND_OUT     equ P1.7
+PWM_OUT equ P1.0
 
 ; Reset vector
 org 0x0000
@@ -76,6 +75,19 @@ stime: ds 1
 stemp: ds 1
 rtime: ds 1
 rtemp: ds 1
+temp: ds 1
+pwm_counter: ds 1 ; Free running counter 0, 1, 2, ..., 100, 0
+pwm: ds 1 ; pwm percentage
+seconds: ds 1 ; a seconds counter attached to Timer 2 ISR
+FSM1_state: ds 1
+soak_temp: ds 1
+soak_time: ds 1
+temp_state3: ds 1
+reflow_temp: ds 1
+reflow_time: ds 1
+cooling_temp: ds 1
+cooling_time: ds 1
+max_soak_time: ds 1
 
 
 ; In the 8051 we have variables that are 1-bit in size.  We can use the setb, clr, jb, and jnb
@@ -88,7 +100,8 @@ PB1: dbit 1
 PB2: dbit 1
 PB3: dbit 1
 PB4: dbit 1
-
+fsm: dbit 1
+abort: dbit 1
 
 cseg
 ; These 'equ' must match the hardware wiring
@@ -107,14 +120,20 @@ $LIST
 
 
 
-soak_time: db 'St:', 0
-soak_temp: db 'ST:', 0
+soak_time_msg: db 'St:', 0
+soak_temp_msg: db 'ST:', 0
       
-reflow_time:      db 'Rt:', 0
-reflow_temp:      db 'RT:', 0
+reflow_time_msg:      db 'Rt:', 0
+reflow_temp_msg:      db 'RT:', 0
 
 start_msg: db 'STARTING...', 0
-empty: db ' ', 0
+clear: db '                ', 0
+fsm_message: db 'FSM', 0
+state1: db 'state 1     ', 0
+state2: db 'state 2     ', 0
+state3: db 'state 3     ', 0
+state4: db 'state 4     ', 0
+state5: db 'state 5     ', 0
 
 Init_All:
 	; Configure all the pins for biderectional I/O
@@ -156,9 +175,6 @@ Init_All:
 
 ; Send a character using the serial port
 
-
-
-
 putchar:
     jnb TI, putchar
     clr TI
@@ -192,16 +208,6 @@ wait_1ms:
 waitms:
 	lcall wait_1ms
 	djnz R2, waitms
-	ret
-
-; We can display a number any way we want.  In this case with
-; four decimal places.
-Display_formated_BCD:
-	Set_Cursor(2, 7)
-	Display_BCD(bcd+2)
-	Display_BCD(bcd+1)
-	Display_char(#'.')
-	Display_BCD(bcd+0)
 	ret
 
 Read_ADC:
@@ -298,6 +304,7 @@ Timer2_Init:
 	; Enable the timer and interrupts
 	orl EIE, #0x80 ; Enable timer 2 interrupt ET2=1
     setb TR2  ; Enable timer 2
+	mov pwm_counter, #0
 	ret
 
 ;---------------------------------;
@@ -310,7 +317,18 @@ Timer2_ISR:
 	; The two registers used in the ISR must be saved in the stack
 	push acc
 	push psw
-	
+
+
+	inc pwm_counter
+	clr c
+	mov a, pwm
+	subb a, pwm_counter ; If pwm_counter <= pwm then c=1
+	cpl c
+	mov PWM_OUT, c
+	mov a, pwm_counter
+	cjne a, #100, Timer2_ISR_done
+	mov pwm_counter, #0
+
 	; Increment the 16-bit one mili second counter
 	inc Count1ms+0    ; Increment the low 8-bits first
 	mov a, Count1ms+0 ; If the low 8-bits overflow, then increment high 8-bits
@@ -422,70 +440,74 @@ LCD_PB:
 LCD_PB_Done:		
 	ret
 
-Display_PushButtons_LCD:
+reset:
+	Set_Cursor(1, 1)
+	Send_Constant_String(#clear)
+
 	Set_Cursor(2, 1)
-	mov a, #'0'
-	mov c, PB4
-	addc a, #0
-    lcall ?WriteData	
-	mov a, #'0'
-	mov c, PB3
-	addc a, #0
-    lcall ?WriteData	
-	mov a, #'0'
-	mov c, PB2
-	addc a, #0
-    lcall ?WriteData	
-	mov a, #'0'
-	mov c, PB1
-	addc a, #0
-    lcall ?WriteData	
-	mov a, #'0'
-	mov c, PB0
-	addc a, #0
-    lcall ?WriteData	
+	Send_Constant_String(#clear)
+	ret	
+
+; We can display a number any way we want.  In this case with
+; four decimal places.
+Display_formated_BCD:
+	Set_Cursor(2, 2)
+	Display_BCD(bcd+3)
+	Display_BCD(bcd+2)
+	Display_char(#'.')
+	Display_BCD(bcd+1)
+	Display_BCD(bcd+0)
+	;Set_Cursor(2, 10)
+	;Display_char(#'=')
 	ret
 	
-clear_LCD:
-	Set_cursor(1,1)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
+update_temp:
+	;Set_Cursor(1, 7)
+    ;Display_BCD(BCD_counter)
+
+	; Read the 2.08V LED voltage connected to AIN0 on pin 6
+	anl ADCCON0, #0xF0
+	orl ADCCON0, #0x00 ; Select channel 0
+	lcall Read_ADC
+	; Save result for later use
+	mov VLED_ADC+0, R0
+	mov VLED_ADC+1, R1
+	; Read the signal connected to AIN7
+	anl ADCCON0, #0xF0
+	orl ADCCON0, #0x07 ; Select channel 7
+	lcall Read_ADC
+	; Convert to voltage
+	mov x+0, R0
+	mov x+1, R1
+	; Pad other bits with zero
+	mov x+2, #0
+	mov x+3, #0
+	Load_y(20740) ; The MEASURED LED voltage: 2.074V, with 4 decimal places
+	lcall mul32
+	; Retrive the ADC LED value
+	mov y+0, VLED_ADC+0
+	mov y+1, VLED_ADC+1
+	; Pad other bits with zero
+	mov y+2, #0
+	mov y+3, #0
+	lcall div32
+	; Convert to BCD and display
 	
-	Set_cursor(2,1)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
-	Send_Constant_String(#empty)
+	Load_y(100000)
+	lcall mul32
 	
-	Set_Cursor(1, 3)
-    Send_Constant_String(#start_msg)
+	Load_y(1353)
+	lcall div32
+
+	Load_y(220000)
+	lcall add32
 	
+	;lcall hex2bcd
+	;lcall Display_formated_BCD
+	; Wait 500 ms between conversions
+
+	mov temp, x
+	ret
 	
 ;---------------------------------;
 ; Main program. Includes hardware ;
@@ -507,6 +529,7 @@ main:
     lcall Timer0_Init
     lcall Timer2_Init
     setb EA   ; Enable Global interrupts
+	setb fsm
     lcall LCD_4BIT
     ; For convenience a few handy macros are included in 'LCD_4bit.inc':
 
@@ -523,7 +546,7 @@ main:
 	; After initialization the program stays in this 'forever' loop
 loop_a:
 	lcall LCD_PB
-	
+
 	jb PB0, loop_b  ; if the 'CLEAR' button is not pressed skip
 	Wait_Milli_Seconds(#80)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
 	jb PB0, loop_b  ; if the 'CLEAR' button is not pressed skip
@@ -540,6 +563,8 @@ loop_b:
 	
 	jb PB1, loop_c ; if the 'CLEAR' button is not pressed skip
 	Wait_Milli_Seconds(#80)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb PB1, loop_c ; if the 'CLEAR' button is not pressed skip
+
 
 	mov a, rtemp
 	add a, #0x01
@@ -552,6 +577,7 @@ loop_c:
 	
 	jb PB2, loop_d ; if the 'CLEAR' button is not pressed skip
 	Wait_Milli_Seconds(#80)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb PB2, loop_d ; if the 'CLEAR' button is not pressed skip
 
 	mov a, stime
 	add a, #0x01
@@ -564,6 +590,7 @@ loop_d:
 	
 	jb PB3, loop_e ; if the 'CLEAR' button is not pressed skip
 	Wait_Milli_Seconds(#80)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb PB3, loop_e ; if the 'CLEAR' button is not pressed skip
 
 	mov a, rtime
 	add a, #0x01
@@ -575,11 +602,12 @@ loop_e:
 	lcall LCD_PB
 	
 	jb PB4, loop_f ; if the 'CLEAR' button is not pressed skip
-	
-	
-	lcall clear_LCD
-	
-loop_f:
+	Wait_Milli_Seconds(#80)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb PB4, loop_f ; if the 'CLEAR' button is not pressed skip
+
+
+	ljmp fsm_start
+loop_f: 
 	clr half_seconds_flag ; We clear this flag in the main loop, but it is set in the ISR for timer 2
 	Set_Cursor(1, 1)
     Send_Constant_String(#soak_time)
@@ -601,4 +629,127 @@ loop_f:
     Display_BCD(rtemp)
 
     ljmp loop_a
+
+fsm_start:
+	cpl fsm
+	lcall reset
+
+	Set_Cursor(1, 1)
+	Send_Constant_String(#fsm_message)
+	mov BCD_counter, #0x00
+	Wait_Milli_Seconds(#250)
+	sjmp FSM1
+	
+;Finite State Machine
+
+set_abort:
+	setb abort
+	ret
+
+soak_time_check:
+	mov a, max_soak_time
+	clr c
+	subb a, BCD_Counter
+	jnc set_abort
+	ret
+
+FSM1:
+	jb PB4, FSM1_state0
+	mov FSM1_state, #0
+	mov a, FSM1_state
+	
+FSM1_state0:
+	cjne a, #0, FSM1_state1		;if we arent in state 0, jump to state 1
+	mov pwm, #0 ;pusle with modulation, 	;0% power
+	jb PB4, Loop ;if startbutton is not pressed, jump to loop (so we can stay in state 0)
+	jnb PB4, $ ; Wait for key release	;if startbutton is pressed, wait till it is released and start the FSM
+	mov FSM1_state, #1
+
+;FSM_State0_Display:
+;	Set_Cursor(1,1)
+;	Send_Constant_String(#state0)
+	lcall Loop
+	
+FSM1_state1: ;ramp to soak
+
+	clr abort;
+	cjne a, #1, FSM1_State2
+	mov pwm, #100 ;set power to 100%
+	mov BCD_Counter, #0 ;set seconds to 0
+	lcall soak_time_check ;check to see if the maximum time for soaking has been reached
+	jb abort, FSM1_State0 ;abort
+	mov a, soak_temp
+	clr c
+	subb a, temp ;check if temperature has been exceeded threshold
+	jnc Loop
+	mov FSM1_state, #2
+
+
+;FSM_State1_Display:
+;	Set_Cursor(1,1)
+;	Send_Constant_String(#state1)
+	lcall Loop
+	
+FSM1_state2:
+	cjne a, #2, FSM1_state3
+	mov pwm, #20 ;set power to 20%
+	mov a, soak_time
+	clr c
+	subb a, BCD_Counter ;check if time has been exceeded threshold
+	jnc Loop
+	mov FSM1_state, #3
+
+;FSM_State2_Display:
+;	Set_Cursor(1,1)
+;	Send_Constant_String(#state2)
+	lcall Loop
+	
+FSM1_state3:
+	cjne a, #3, FSM1_state4
+	mov pwm, #100 ;set power to 100%
+	mov BCD_Counter, #0 ;set seconds to 0
+	mov a, reflow_temp
+	clr c
+	subb a, temp ;check if temperature has been exceeded threshold
+	jnc Loop
+	mov FSM1_state, #4
+
+;FSM_State3_Display:
+;	Set_Cursor(1,1)
+;	Send_Constant_String(#state3)
+	lcall Loop
+
+FSM1_state4:
+	cjne a, #4, FSM1_state5
+	mov pwm, #20 ;set power to 20%
+	mov a, reflow_time
+	clr c
+	subb a, BCD_Counter ;check if time has been exceeded threshold
+	jnc Loop
+	mov FSM1_state, #5
+
+;FSM_State4_Display:
+;	Set_Cursor(1,1)
+;	Send_Constant_String(#state4)
+	lcall Loop
+
+FSM1_state5:
+	cjne a, #5, FSM1_state0
+	mov pwm, #0 ;set power to 0%
+	mov a, cooling_temp
+	clr c
+	subb a, temp ;check if temperature is below threshold
+	jc Loop
+	mov FSM1_state, #0
+
+;FSM_State5_Display:
+;	Set_Cursor(1,1)
+;	Send_Constant_String(#state5)
+	lcall Loop
+
+Loop:
+	mov a, FSM1_state
+	lcall Update_temp
+	lcall FSM1
+
 END
