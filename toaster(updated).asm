@@ -79,7 +79,7 @@ temp: ds 1
 pwm_counter: ds 1 ; Free running counter 0, 1, 2, ..., 100, 0
 pwm: ds 1 ; pwm percentage
 seconds: ds 1 ; a seconds counter attached to Timer 2 ISR
-FSM1_state: ds 1
+current_state: ds 1
 soak_temp: ds 1
 soak_time: ds 1
 temp_state3: ds 1
@@ -129,11 +129,13 @@ reflow_temp_msg:      db 'RT:', 0
 start_msg: db 'STARTING...', 0
 clear: db '                ', 0
 fsm_message: db 'FSM', 0
+state0: db 'state 0     ', 0
 state1: db 'state 1     ', 0
 state2: db 'state 2     ', 0
 state3: db 'state 3     ', 0
 state4: db 'state 4     ', 0
 state5: db 'state 5     ', 0
+complete: db 'Reflow Complete', 0
 
 Init_All:
 	; Configure all the pins for biderectional I/O
@@ -317,6 +319,12 @@ Timer2_ISR:
 	; The two registers used in the ISR must be saved in the stack
 	push acc
 	push psw
+	
+; Increment the 16-bit one mili second counter
+	inc Count1ms+0    ; Increment the low 8-bits first
+	mov a, Count1ms+0 ; If the low 8-bits overflow, then increment high 8-bits
+	jnz Inc_Done
+	inc Count1ms+1
 
 
 	inc pwm_counter
@@ -329,11 +337,7 @@ Timer2_ISR:
 	cjne a, #100, Timer2_ISR_done
 	mov pwm_counter, #0
 
-	; Increment the 16-bit one mili second counter
-	inc Count1ms+0    ; Increment the low 8-bits first
-	mov a, Count1ms+0 ; If the low 8-bits overflow, then increment high 8-bits
-	jnz Inc_Done
-	inc Count1ms+1
+	
 
 Inc_Done:
 	; Check if half second has passed
@@ -456,7 +460,7 @@ Display_formated_BCD:
 	Display_BCD(bcd+2)
 	Display_char(#'.')
 	Display_BCD(bcd+1)
-	Display_BCD(bcd+0)
+	;Display_BCD(bcd+0)
 	;Set_Cursor(2, 10)
 	;Display_char(#'=')
 	ret
@@ -506,7 +510,7 @@ update_temp:
 	;lcall Display_formated_BCD
 	; Wait 500 ms between conversions
 
-	mov temp, x
+	;mov temp, x
 	ret
 	
 ;---------------------------------;
@@ -531,6 +535,8 @@ main:
     setb EA   ; Enable Global interrupts
 	setb fsm
     lcall LCD_4BIT
+
+	mov pwm, #0
     ; For convenience a few handy macros are included in 'LCD_4bit.inc':
 
 	;mov BCD_counter, #0x00
@@ -610,13 +616,13 @@ loop_e:
 loop_f: 
 	clr half_seconds_flag ; We clear this flag in the main loop, but it is set in the ISR for timer 2
 	Set_Cursor(1, 1)
-    Send_Constant_String(#soak_time)
+    Send_Constant_String(#soak_time_msg)
     Set_Cursor(1, 10)
-    Send_Constant_String(#soak_temp)
+    Send_Constant_String(#soak_temp_msg)
 	Set_Cursor(2, 1)
-    Send_Constant_String(#reflow_time)
+    Send_Constant_String(#reflow_time_msg)
     Set_Cursor(2, 10)
-	Send_Constant_String(#reflow_temp)
+	Send_Constant_String(#reflow_temp_msg)
 
     
 	Set_Cursor(1, 4)
@@ -635,10 +641,19 @@ fsm_start:
 	lcall reset
 
 	Set_Cursor(1, 1)
-	Send_Constant_String(#fsm_message)
+	Send_Constant_String(#start_msg)
 	mov BCD_counter, #0x00
+	mov current_state, #1
 	Wait_Milli_Seconds(#250)
-	sjmp FSM1
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	
+	sjmp FSM1_state1
 	
 ;Finite State Machine
 
@@ -653,103 +668,131 @@ soak_time_check:
 	jnc set_abort
 	ret
 
-FSM1:
-	jb PB4, FSM1_state0
-	mov FSM1_state, #0
-	mov a, FSM1_state
-	
-FSM1_state0:
-	cjne a, #0, FSM1_state1		;if we arent in state 0, jump to state 1
-	mov pwm, #0 ;pusle with modulation, 	;0% power
-	jb PB4, Loop ;if startbutton is not pressed, jump to loop (so we can stay in state 0)
-	jnb PB4, $ ; Wait for key release	;if startbutton is pressed, wait till it is released and start the FSM
-	mov FSM1_state, #1
 
-;FSM_State0_Display:
-;	Set_Cursor(1,1)
-;	Send_Constant_String(#state0)
-	lcall Loop
-	
+
 FSM1_state1: ;ramp to soak
-
-	clr abort;
+	clr abort
+	mov a, current_state
 	cjne a, #1, FSM1_State2
+	Set_Cursor(1,1)
+	Send_Constant_String(#state1)
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	lcall update_temp
+	lcall hex2bcd
+	lcall Display_formated_BCD
+	
+	
+	Set_Cursor(1, 14)
+    Display_BCD(stemp)
+
 	mov pwm, #100 ;set power to 100%
-	mov BCD_Counter, #0 ;set seconds to 0
-	lcall soak_time_check ;check to see if the maximum time for soaking has been reached
-	jb abort, FSM1_State0 ;abort
-	mov a, soak_temp
+	
+	;lcall soak_time_check ;check to see if the maximum time for soaking has been reached
+	;jb abort, FSM1_state1 ;abort if abort bit set to 1
+
+	mov a, stemp+0 
 	clr c
-	subb a, temp ;check if temperature has been exceeded threshold
-	jnc Loop
-	mov FSM1_state, #2
-
-
-;FSM_State1_Display:
-;	Set_Cursor(1,1)
-;	Send_Constant_String(#state1)
-	lcall Loop
+	subb a, bcd+2 ;check if temperature has been exceeded threshold
+	jnc FSM1_state1
+	mov current_state, #2
+	mov BCD_Counter, #0
+	lcall reset
 	
 FSM1_state2:
+	mov a, current_state
 	cjne a, #2, FSM1_state3
+	
+	Set_Cursor(1,1)
+	Send_Constant_String(#state2)
+	Set_Cursor(1,14)
+	Display_BCD(stime)
+	
 	mov pwm, #20 ;set power to 20%
-	mov a, soak_time
+	Set_Cursor(2, 1)
+    Display_BCD(BCD_counter)
+	mov a, stime
 	clr c
 	subb a, BCD_Counter ;check if time has been exceeded threshold
-	jnc Loop
-	mov FSM1_state, #3
-
-;FSM_State2_Display:
-;	Set_Cursor(1,1)
-;	Send_Constant_String(#state2)
-	lcall Loop
+	jnc FSM1_State2
+	mov current_state, #3
+	lcall reset
 	
 FSM1_state3:
+	mov a, current_state
 	cjne a, #3, FSM1_state4
-	mov pwm, #100 ;set power to 100%
-	mov BCD_Counter, #0 ;set seconds to 0
-	mov a, reflow_temp
-	clr c
-	subb a, temp ;check if temperature has been exceeded threshold
-	jnc Loop
-	mov FSM1_state, #4
+	Set_Cursor(1,1)
+	Send_Constant_String(#state3)
 
-;FSM_State3_Display:
-;	Set_Cursor(1,1)
-;	Send_Constant_String(#state3)
-	lcall Loop
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	lcall update_temp
+	lcall hex2bcd
+	lcall Display_formated_BCD
+
+	Set_Cursor(1,14)
+	Display_BCD(rtemp)
+	
+	mov pwm, #100 ;set power to 100%
+	mov a, rtemp+0
+	clr c
+	subb a, BCD+2 ;check if temperature has been exceeded threshold
+	jnc FSM1_state3
+	mov current_state, #4
+	mov BCD_Counter, #0 ;set seconds to 0
+	lcall reset
+
 
 FSM1_state4:
+	mov a, current_state
 	cjne a, #4, FSM1_state5
+	Set_Cursor(1,1)
+	Send_Constant_String(#state4)
+	Set_Cursor(1,14)
+	Display_BCD(rtime)
+
 	mov pwm, #20 ;set power to 20%
-	mov a, reflow_time
+	Set_Cursor(2, 1)
+    Display_BCD(BCD_counter)
+	mov a, rtime
 	clr c
 	subb a, BCD_Counter ;check if time has been exceeded threshold
-	jnc Loop
-	mov FSM1_state, #5
+	jnc FSM1_state4
+	mov current_state, #5
+	lcall reset
 
-;FSM_State4_Display:
-;	Set_Cursor(1,1)
-;	Send_Constant_String(#state4)
-	lcall Loop
 
 FSM1_state5:
-	cjne a, #5, FSM1_state0
+	mov a, current_state
+	cjne a, #5, FSM1_complete
+	Set_Cursor(1,1)
+	Send_Constant_String(#state5)
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	lcall update_temp
+	lcall hex2bcd
+	lcall Display_formated_BCD
+	
 	mov pwm, #0 ;set power to 0%
-	mov a, cooling_temp
+	mov a, #96
 	clr c
-	subb a, temp ;check if temperature is below threshold
-	jc Loop
-	mov FSM1_state, #0
+	subb a, bcd+2 ;check if temperature is below threshold
+	jc FSM1_state5
+	mov current_state, #0
 
-;FSM_State5_Display:
-;	Set_Cursor(1,1)
-;	Send_Constant_String(#state5)
-	lcall Loop
-
-Loop:
-	mov a, FSM1_state
-	lcall Update_temp
-	lcall FSM1
-
+FSM1_complete:
+	Set_Cursor(1,1)
+	Send_Constant_String(#complete)
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	lcall reset
+	ljmp loop_a
 END
