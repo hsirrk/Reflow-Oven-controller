@@ -9,5 +9,5 @@ Play_Note:
 	cpl TR0
     Wait_Milli_Seconds(#200) ; Note duration
     clr SOUND_OUT  ; Turn off the sound output
-	Wait_Milli_Seconds(#200)
+    ;Wait_Milli_Seconds(#200)
     ret
