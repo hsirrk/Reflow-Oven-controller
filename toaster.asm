@@ -3,7 +3,7 @@
 ; an ISR for timer 0; and c) in the 'main' loop it displays the variable
 ; incremented/decremented using the ISR for timer 2 on the LCD.  Also resets it to 
 ; zero if the 'CLEAR' push button connected to P1.5 is pressed.
-$NOLIST
+$NOLISTx
 $MODN76E003
 $LIST
 
@@ -65,16 +65,16 @@ org 0x002B
 ; In the 8051 we can define direct access variables starting at location 0x30 up to location 0x7F
 dseg at 0x30
 Count1ms:     ds 2 ; Used to determine when half second has passed
-BCD_counter:  ds 1 ; The BCD counter incrememted in the ISR and displayed in the main loop
+BCD_counter:  ds 2 ; The BCD counter incrememted in the ISR and displayed in the main loop
 BCD_minutes:  ds 1
 x:   ds 4
 y:   ds 4
 bcd: ds 5
 VLED_ADC: ds 2
-stime: ds 1
-stemp: ds 1
-rtime: ds 1
-rtemp: ds 1
+stime: ds 2
+stemp: ds 2	;0x05 0x43
+rtime: ds 2
+rtemp: ds 2
 temp: ds 1
 pwm_counter: ds 1 ; Free running counter 0, 1, 2, ..., 100, 0
 pwm: ds 1 ; pwm percentage
@@ -88,6 +88,7 @@ reflow_time: ds 1
 cooling_temp: ds 1
 cooling_time: ds 1
 max_soak_time: ds 1
+temporary: ds 4
 
 
 ; In the 8051 we have variables that are 1-bit in size.  We can use the setb, clr, jb, and jnb
@@ -130,12 +131,14 @@ start_msg: db 'STARTING...', 0
 clear: db '                ', 0
 fsm_message: db 'FSM', 0
 state0: db 'state 0     ', 0
-state1: db 'state 1     ', 0
-state2: db 'state 2     ', 0
-state3: db 'state 3     ', 0
-state4: db 'state 4     ', 0
-state5: db 'state 5     ', 0
+state1: db '  Ramp -> Soak  ', 0
+state2: db '      Soak      ', 0
+state3: db ' Ramp -> Reflow ', 0
+state4: db '     Reflow     ', 0
+state5: db '  Cooling Down  ', 0
 complete: db 'Reflow Complete', 0
+Abort_msg: db ' Aborting... ', 0
+stop: db ' Stoping...', 0
 
 Init_All:
 	; Configure all the pins for biderectional I/O
@@ -353,33 +356,25 @@ Inc_Done:
 	clr a
 	mov Count1ms+0, a
 	mov Count1ms+1, a
+	
+
 	; Increment the BCD counter
-	mov a, BCD_counter
+	mov a, BCD_counter+0
 	
 	add a, #0x01
 	sjmp Timer2_ISR_da
 
 Timer2_ISR_da:
-	; Check if BCD_counter reaches 60.
 	da a ; Decimal adjust instruction.  Check datasheet for more details!
 	mov BCD_counter, a
-	
-    mov a, BCD_counter
-    subb a, #96
-    jc Timer2_ISR_done ; If it's less than 60, continue
-    mov BCD_counter, #0    ; Reset counter to 0 if it reaches 60
-    inc BCD_minutes        ; Increment minutes.
-    
-	mov a, BCD_minutes
+
+	cjne a, #0x00, Timer2_ISR_done
+
+	mov a, BCD_Counter+1
+    add a, #0x01        ; Increment time.
 	da a 
-	mov BCD_minutes, a
-	
-    ; Check if BCD_minutes reaches 60.
-    mov a, BCD_minutes
-    subb a, #96
-    jc Timer2_ISR_done ; If it's less than 60, continue
-    mov BCD_minutes, #0    ; Reset counter to 0 if it reaches 60
-	
+	mov BCD_Counter+1,a 
+
 Timer2_ISR_done:
 	pop psw
 	pop acc
@@ -503,12 +498,22 @@ update_temp:
 	Load_y(1353)
 	lcall div32
 
-	Load_y(220000)
+	Load_y(205000)
 	lcall add32
 	
-	;lcall hex2bcd
-	;lcall Display_formated_BCD
-	; Wait 500 ms between conversions
+	; Convert to BCD and send to serial port for graphing
+	lcall hex2bcd
+	Send_BCD(bcd+3)
+	Send_BCD(bcd+2)
+	mov a, #'.'
+	lcall putchar
+	Send_BCD(bcd+1)
+	;Send_BCD(bcd+0)
+	mov a, #'\r'
+	lcall putchar
+	mov a, #'\n'
+	lcall putchar
+	
 
 	;mov temp, x
 	ret
@@ -537,32 +542,45 @@ main:
     lcall LCD_4BIT
 
 	mov pwm, #0
+	mov max_soak_time, #0x50
     ; For convenience a few handy macros are included in 'LCD_4bit.inc':
 
 	;mov BCD_counter, #0x00
 	;mov BCD_minutes, #0x00
-	mov rtemp, #0x0
-	mov stemp, #0x0
-	mov stime, #0x0
-	mov rtime, #0x0
+	mov rtemp+0, #0x50
+	mov rtemp+1, #0x01
+	mov stemp+0, #0x00
+	mov stemp+1, #0x01
+	mov stime+0, #0x20
+	mov stime+1, #0x00
+	mov rtime+0, #0x15
+	mov rtime+1, #0x00
 
 	setb half_seconds_flag
+	
 
 	
 	; After initialization the program stays in this 'forever' loop
 loop_a:
+	mov pwm, #0
 	lcall LCD_PB
-
+	lcall update_temp
+	
 	jb PB0, loop_b  ; if the 'CLEAR' button is not pressed skip
 	Wait_Milli_Seconds(#80)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
 	jb PB0, loop_b  ; if the 'CLEAR' button is not pressed skip
+	mov a, stemp+0  ; Load the least significant byte of stemp
+	add a, #0x01    ; Increment the LSB by 1
+	da a            ; Decimal adjust the result to handle carry
+	
+	mov stemp+0, a
+	cjne a, #0x00, loop_b
 
-
-	mov a, stemp
+	mov a, stemp+1
 	add a, #0x01
 	da a
-	mov stemp, a
-	sjmp loop_f
+	mov stemp+1, a
+	ljmp loop_b
 	
 loop_b:
 	lcall LCD_PB
@@ -571,12 +589,18 @@ loop_b:
 	Wait_Milli_Seconds(#80)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
 	jb PB1, loop_c ; if the 'CLEAR' button is not pressed skip
 
-
-	mov a, rtemp
+	mov a, rtemp+0
 	add a, #0x01
 	da a
-	mov rtemp, a
-	sjmp loop_f
+	mov rtemp+0, a
+
+	cjne a, #0x00, loop_c
+
+	mov a, rtemp+1
+	add a, #0x01
+	da a
+	mov rtemp+1, a
+	ljmp loop_c
 	
 loop_c:
 	lcall LCD_PB
@@ -585,11 +609,18 @@ loop_c:
 	Wait_Milli_Seconds(#80)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
 	jb PB2, loop_d ; if the 'CLEAR' button is not pressed skip
 
-	mov a, stime
+	mov a, stime+0
 	add a, #0x01
 	da a
-	mov stime, a
-	sjmp loop_f
+	mov stime+0, a
+
+	cjne a, #0x00, loop_d
+
+	mov a, stime+1
+    add a, #0x01        ; Increment time.
+	da a 
+	mov stime+1,a 
+	ljmp loop_d
 
 loop_d:
 	lcall LCD_PB
@@ -602,7 +633,14 @@ loop_d:
 	add a, #0x01
 	da a
 	mov rtime, a
-	sjmp loop_f
+
+	cjne a, #0x00, loop_e
+
+	mov a, rtime+1
+    add a, #0x01        ; Increment time.
+	da a 
+	mov rtime+1,a 
+	sjmp loop_e
 
 loop_e:
 	lcall LCD_PB
@@ -626,13 +664,17 @@ loop_f:
 
     
 	Set_Cursor(1, 4)
-    Display_BCD(stime)
-	Set_Cursor(1, 14)
-    Display_BCD(stemp)
+    Display_BCD(stime+1)
+	Display_BCD(stime+0)
+	Set_Cursor(1, 13)
+    Display_BCD(stemp+1)
+	Display_BCD(stemp+0)
 	Set_Cursor(2, 4)
-    Display_BCD(rtime)
-	Set_Cursor(2, 14)
-    Display_BCD(rtemp)
+    Display_BCD(rtime+1)
+	Display_BCD(rtime+0)
+	Set_Cursor(2, 13)
+    Display_BCD(rtemp+1)
+	Display_BCD(rtemp+0)
 
     ljmp loop_a
 
@@ -642,7 +684,6 @@ fsm_start:
 
 	Set_Cursor(1, 1)
 	Send_Constant_String(#start_msg)
-	mov BCD_counter, #0x00
 	mov current_state, #1
 	Wait_Milli_Seconds(#250)
 	Wait_Milli_Seconds(#250)
@@ -652,7 +693,8 @@ fsm_start:
 	Wait_Milli_Seconds(#250)
 	Wait_Milli_Seconds(#250)
 	Wait_Milli_Seconds(#250)
-	
+	mov BCD_counter, #0x00
+	mov BCD_Counter+1, #0x00
 	sjmp FSM1_state1
 	
 ;Finite State Machine
@@ -665,134 +707,294 @@ soak_time_check:
 	mov a, max_soak_time
 	clr c
 	subb a, BCD_Counter
-	jnc set_abort
+	jc temperature_check
+	ret
+temperature_check:
+	lcall update_temp
+	mov a, bcd+2
+	clr c
+	subb a, #0x50
+	jc hundredcheck6
 	ret
 
+hundredcheck6:
+	mov a, bcd+3
+	cjne a, #0, return
+	ljmp set_abort
 
+return:
+	ret
 
 FSM1_state1: ;ramp to soak
+    lcall LCD_PB
+
+	jb PB4, here ; if the 'CLEAR' button is not pressed skip
+	Wait_Milli_Seconds(#50)
+	jb PB4, here ; if the 'CLEAR' button is not pressed skip
+	lcall reset
+	ljmp loop_a
+here:	
 	clr abort
-	mov a, current_state
-	cjne a, #1, FSM1_State2
+	;mov a, current_state
+	;cjne a, #1, FSM1_State2
 	Set_Cursor(1,1)
 	Send_Constant_String(#state1)
+	Send_BCD(#3)
+	Send_BCD(#0)
+	mov a, #'\r'
+	lcall putchar
+	mov a, #'\n'
+	lcall putchar
 	Wait_Milli_Seconds(#250)
 	Wait_Milli_Seconds(#250)
 	Wait_Milli_Seconds(#250)
 	Wait_Milli_Seconds(#250)
 	lcall update_temp
-	lcall hex2bcd
 	lcall Display_formated_BCD
 	
-	
-	Set_Cursor(1, 14)
-    Display_BCD(stemp)
+	Set_Cursor(2, 10)
+    Display_BCD(stemp+1)
+	Display_BCD(stemp+0)
 
 	mov pwm, #100 ;set power to 100%
 	
-	;lcall soak_time_check ;check to see if the maximum time for soaking has been reached
-	;jb abort, FSM1_state1 ;abort if abort bit set to 1
+	lcall soak_time_check ;check to see if the maximum time for soaking has been reached
+	jb abort, aborthere ;abort if abort bit set to 1
 
 	mov a, stemp+0 
 	clr c
 	subb a, bcd+2 ;check if temperature has been exceeded threshold
-	jnc FSM1_state1
-	mov current_state, #2
+	jnc stateone
+
+hundredcheck1:
+	mov a, stemp+1
+	subb a, bcd+3 ;check if time has been exceeded threshold
+	jnc stateone
 	mov BCD_Counter, #0
+	mov BCD_Counter+1, #0
 	lcall reset
+	ljmp FSM1_state2
+
+stateone:
+	ljmp FSM1_State1
+
+aborthere:
+	lcall reset
+	ljmp loop_a
 	
 FSM1_state2:
-	mov a, current_state
-	cjne a, #2, FSM1_state3
-	
+	;mov a, current_state
+	;cjne a, #2, FSM1_state3
+	lcall LCD_PB
+
+	jb PB4, here2 ; if the 'CLEAR' button is not pressed skip
+	Wait_Milli_Seconds(#50)
+	jb PB4, here2 ; if the 'CLEAR' button is not pressed skip
+	lcall reset
+	ljmp loop_a
+
+here2:
 	Set_Cursor(1,1)
 	Send_Constant_String(#state2)
-	Set_Cursor(1,14)
-	Display_BCD(stime)
-	
-	mov pwm, #20 ;set power to 20%
-	Set_Cursor(2, 1)
-    Display_BCD(BCD_counter)
-	mov a, stime
-	clr c
-	subb a, BCD_Counter ;check if time has been exceeded threshold
-	jnc FSM1_State2
-	mov current_state, #3
-	lcall reset
-	
-FSM1_state3:
-	mov a, current_state
-	cjne a, #3, FSM1_state4
-	Set_Cursor(1,1)
-	Send_Constant_String(#state3)
+	Set_Cursor(2,10)
+	Display_BCD(stime+1)
+	Display_BCD(stime+0)
 
+	Send_BCD(#3)
+	Send_BCD(#1)
+	mov a, #'\r'
+	lcall putchar
+	mov a, #'\n'
+	lcall putchar
 	Wait_Milli_Seconds(#250)
 	Wait_Milli_Seconds(#250)
 	Wait_Milli_Seconds(#250)
 	Wait_Milli_Seconds(#250)
 	lcall update_temp
-	lcall hex2bcd
+	
+	mov pwm, #20 ;set power to 20%
+	Set_Cursor(2, 1)
+    Display_BCD(BCD_counter+1)
+	Display_BCD(BCD_counter)
+	mov a, stime
+	clr c
+	subb a, BCD_Counter ;check if time has been exceeded threshold
+	jnc statetwo
+
+hundredcheck2:
+	mov a, stime+1
+	subb a, BCD_Counter+1 ;check if time has been exceeded threshold
+	jnc statetwo
+	mov current_state, #3
+	lcall reset
+	ljmp FSM1_state3
+
+statetwo:
+	ljmp FSM1_State2
+
+	
+FSM1_state3:
+	;mov a, current_state
+	;cjne a, #3, FSM1_state4
+	lcall LCD_PB
+
+	jb PB4, here3 ; if the 'CLEAR' button is not pressed skip
+	Wait_Milli_Seconds(#50)
+	jb PB4, here3 ; if the 'CLEAR' button is not pressed skip
+	lcall reset
+	ljmp loop_a
+here3:
+	Set_Cursor(1,1)
+	Send_Constant_String(#state3)
+	
+	Send_BCD(#3)
+	Send_BCD(#2)
+	mov a, #'\r'
+	lcall putchar
+	mov a, #'\n'
+	lcall putchar
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	lcall update_temp
 	lcall Display_formated_BCD
 
-	Set_Cursor(1,14)
-	Display_BCD(rtemp)
+	Set_Cursor(2,10)
+	Display_BCD(rtemp+1)
+	Display_BCD(rtemp+0)
 	
 	mov pwm, #100 ;set power to 100%
 	mov a, rtemp+0
 	clr c
-	subb a, BCD+2 ;check if temperature has been exceeded threshold
-	jnc FSM1_state3
-	mov current_state, #4
-	mov BCD_Counter, #0 ;set seconds to 0
-	lcall reset
+	subb a, bcd+2 ;check if temperature has been exceeded threshold
+	jnc statethree
 
+hundredcheck3:
+	mov a, rtemp+1
+	subb a, BCD+3 ;check if time has been exceeded threshold
+	jnc statethree
+	lcall reset
+	mov BCD_Counter, #0 ;set seconds to 0
+	mov BCD_Counter+1, #0 ;set seconds to 0
+	ljmp FSM1_state4
+
+statethree:
+	ljmp FSM1_State3
 
 FSM1_state4:
-	mov a, current_state
-	cjne a, #4, FSM1_state5
-	Set_Cursor(1,1)
-	Send_Constant_String(#state4)
-	Set_Cursor(1,14)
-	Display_BCD(rtime)
 
-	mov pwm, #20 ;set power to 20%
-	Set_Cursor(2, 1)
-    Display_BCD(BCD_counter)
-	mov a, rtime
-	clr c
-	subb a, BCD_Counter ;check if time has been exceeded threshold
-	jnc FSM1_state5
-	mov current_state, #5
+
+	;mov a, current_state
+	;cjne a, #4, FSM1_state5
+	lcall LCD_PB
+
+	jb PB4, here4 ; if the 'CLEAR' button is not pressed skip
+	Wait_Milli_Seconds(#50)
+	jb PB4, here4 ; if the 'CLEAR' button is not pressed skip
 	lcall reset
-
-
-FSM1_state5:
-	mov a, current_state
-	cjne a, #5, FSM1_complete
+	ljmp loop_a
+here4:
 	Set_Cursor(1,1)
 	Send_Constant_String(#state4)
+	Set_Cursor(2,10)
+	Display_BCD(rtime+1)
+	Display_BCD(rtime+0)
+
+	Send_BCD(#3)
+	Send_BCD(#3)
+	mov a, #'\r'
+	lcall putchar
+	mov a, #'\n'
+	lcall putchar
 	Wait_Milli_Seconds(#250)
 	Wait_Milli_Seconds(#250)
 	Wait_Milli_Seconds(#250)
 	Wait_Milli_Seconds(#250)
 	lcall update_temp
-	lcall hex2bcd
+
+	mov pwm, #20 ;set power to 20%
+	Set_Cursor(2, 1)
+    ;Display_BCD(BCD_counter+1)
+	Display_BCD(BCD_counter+0)
+	mov a, rtime
+	clr c
+	subb a, BCD_Counter ;check if time has been exceeded threshold
+	jnc statefour
+
+hundredcheck4:
+	mov a, rtime+1
+	subb a, BCD_Counter+1 ;check if time has been exceeded threshold
+	jnc statefour
+	lcall reset
+	ljmp FSM1_state5
+
+statefour:
+	ljmp FSM1_State4
+
+
+FSM1_state5:
+
+	;mov a, current_state
+	;cjne a, #5, FSM1_complete
+	lcall LCD_PB
+
+	jb PB4, here5 ; if the 'CLEAR' button is not pressed skip
+	Wait_Milli_Seconds(#50)
+	jb PB4, here5 ; if the 'CLEAR' button is not pressed skip
+	lcall reset
+	ljmp loop_a
+here5:
+	Set_Cursor(1,1)
+	Send_Constant_String(#state5)
+	Send_BCD(#3)
+	Send_BCD(#4)
+	mov a, #'\r'
+	lcall putchar
+	mov a, #'\n'
+	lcall putchar
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	lcall update_temp
 	lcall Display_formated_BCD
 	
 	mov pwm, #0 ;set power to 0%
-	mov a, #60
+
+	mov a, #96
 	clr c
 	subb a, bcd+2 ;check if temperature is below threshold
-	jc FSM1_complete
-	mov current_state, #0
+	jc statefive
+	
+hundredcheck5:
+	mov a, #0
+	subb a, bcd+3 ;check if time has been exceeded threshold
+	jc statefive
+	lcall reset
+	ljmp FSM1_complete
+
+statefive:
+	ljmp FSM1_State5
 
 FSM1_complete:
+	lcall reset
 	Set_Cursor(1,1)
 	Send_Constant_String(#complete)
 	Wait_Milli_Seconds(#250)
 	Wait_Milli_Seconds(#250)
 	Wait_Milli_Seconds(#250)
 	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	Wait_Milli_Seconds(#250)
+	Send_BCD(#3)
+	Send_BCD(#5)
+	mov a, #'\r'
+	lcall putchar
+	mov a, #'\n'
+	lcall putchar
 	lcall reset
 	ljmp loop_a
 END
