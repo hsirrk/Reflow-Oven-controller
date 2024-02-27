@@ -8,7 +8,7 @@ from playsound import playsound
 import socket
 
 xsize=500
-y_list=[]
+temp_list=[]
 # configure the serial port
 
 
@@ -44,6 +44,7 @@ def serial_read(ser):
         strin = strin.rstrip()
         strin = strin.decode()
         current_val = float(strin)  # Convert the current string to float
+        temp_list.append(current_val)
 
         if current_val >= 300:
             temp = current_val
